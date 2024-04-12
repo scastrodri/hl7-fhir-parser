@@ -1,0 +1,105 @@
+Transform: AWS::Serverless-2016-10-31
+Resources:
+  hl7APItWH:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub
+        - ${ResourceName} From Stack ${AWS::StackName}
+        - ResourceName: hl7APItWH
+      StageName: Prod
+      DefinitionBody:
+        openapi: '3.0'
+        info: {}
+        paths:
+          /messageId:
+            get:
+              x-amazon-apigateway-integration:
+                httpMethod: POST
+                type: aws_proxy
+                uri: !Sub arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GetLambdaFunction.Arn}/invocations
+              responses: {}
+          /message:
+            post:
+              x-amazon-apigateway-integration:
+                httpMethod: POST
+                type: aws_proxy
+                uri: !Sub arn:${AWS::Partition}:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${PostLambdaFunction.Arn}/invocations
+              responses: {}
+      EndpointConfiguration: REGIONAL
+      TracingEnabled: true
+      Cors:
+        MaxAge: 5
+  GetLambdaFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: !Sub
+        - Stack ${AWS::StackName} Function ${ResourceName}
+        - ResourceName: GetLambdaFunction
+      CodeUri: src/Function
+      Handler: handler.handler
+      Runtime: python3.8
+      MemorySize: 3008
+      Timeout: 30
+      Tracing: Active
+      Events:
+        hl7APItWHGETmessageId:
+          Type: Api
+          Properties:
+            Path: /messageId
+            Method: GET
+            RestApiId: !Ref hl7APItWH
+      Environment:
+        Variables:
+          HL7MESSAGES_TABLE_NAME: !Ref hl7messages
+          HL7MESSAGES_TABLE_ARN: !GetAtt hl7messages.Arn
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref hl7messages
+  GetLambdaFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${GetLambdaFunction}
+  PostLambdaFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: !Sub
+        - Stack ${AWS::StackName} Function ${ResourceName}
+        - ResourceName: PostLambdaFunction
+      CodeUri: src/Function2
+      Handler: handler.handler
+      Runtime: python3.8
+      MemorySize: 3008
+      Timeout: 30
+      Tracing: Active
+      Events:
+        hl7APItWHPOSTmessage:
+          Type: Api
+          Properties:
+            Path: /message
+            Method: POST
+            RestApiId: !Ref hl7APItWH
+      Environment:
+        Variables:
+          HL7MESSAGES_TABLE_NAME: !Ref hl7messages
+          HL7MESSAGES_TABLE_ARN: !GetAtt hl7messages.Arn
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref hl7messages
+  PostLambdaFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    DeletionPolicy: Retain
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${PostLambdaFunction}
+  hl7messages:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: messageId
+          AttributeType: S
+      BillingMode: PAY_PER_REQUEST
+      KeySchema:
+        - AttributeName: messageId
+          KeyType: HASH
+      StreamSpecification:
+        StreamViewType: NEW_AND_OLD_IMAGES
